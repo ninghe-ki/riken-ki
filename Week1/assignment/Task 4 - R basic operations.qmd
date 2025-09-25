@@ -1,0 +1,68 @@
+---
+title: "Task 4 - R basic operations"
+author: "Hening - Karolinska Institutet"
+date: "`r format(Sys.time(),'%Y-%m-%d')`"
+date-format: "YYYY-MM-DD"
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: false
+    code-block-bg: true
+    code-overflow: scroll
+    title-block-banner: true
+    fig-align: center
+    df-print: paged
+    grid: 
+      content-mode: auto
+    smooth-scroll: true
+    page-navigation: true
+execute:
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+## 1. What is the square root of 10?
+```{r}
+x <- sqrt(10)
+print(x)
+```
+
+## 2. What is the logarithm of 32 to the base 2?
+```{r}
+x <- log(32, base = 2)
+print(x)
+```
+
+## 3. What is the sum of the numbers from 1 to 1000?
+```{r}
+x <- sum(1:1000)
+print(x)
+```
+
+## 4. What is the sum of all even numbers from 2 to 1000?
+```{r}
+x <- sum(seq(2, 1000, by = 2))
+print(x)
+```
+
+## 5. How many pairwise comparisons are there for 100 genes?
+```{r}
+x <- choose(100, 2)
+print(x)
+```
+
+## 6. And how many ways to arrange 100 genes in triples?
+```{r}
+x <- choose(100, 3)
+print(x)
+```
+
+## Date & Session
+```{r}
+#| collapse: true
+#| results: hold
+date()
+sessionInfo()
+```

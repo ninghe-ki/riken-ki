@@ -1,0 +1,54 @@
+---
+title: "Task 5 - Using R example datasets"
+author: "Hening - Karolinska Institutet"
+date: "`r format(Sys.time(),'%Y-%m-%d')`"
+date-format: "YYYY-MM-DD"
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: false
+    code-block-bg: true
+    code-overflow: scroll
+    title-block-banner: true
+    fig-align: center
+    df-print: paged
+    grid: 
+      content-mode: auto
+    smooth-scroll: true
+    page-navigation: true
+execute:
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+## 1. Use the R internal CO2 dataset (“data(CO2)”).
+```{r}
+data(CO2)
+print(CO2)
+```
+
+## 2. Describe briefly the content of the CO2 dataset using the help function.
+```{r}
+help(CO2)
+```
+
+## 3. What is the average and median CO2 uptake of the plants from Quebec and Mississippi?
+```{r}
+mean_co2 <- aggregate(uptake ~ Type, data = CO2, FUN = mean)
+median_co2 <- aggregate(uptake ~ Type, data = CO2, FUN = median)
+
+print(mean_co2)
+print(median_co2)
+```
+
+## 4. [Optional] In the “airway” example data from Bioconductor, how many genes are expressed in each sample? How many genes are not expressed in any sample?
+
+## Date & Session
+```{r}
+#| collapse: true
+#| results: hold
+date()
+sessionInfo()
+```
