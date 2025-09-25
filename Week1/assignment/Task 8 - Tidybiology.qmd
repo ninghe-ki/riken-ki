@@ -1,0 +1,281 @@
+---
+title: "Task 8 - Tidybiology"
+author: "Hening - Karolinska Institutet"
+date: "`r format(Sys.time(),'%Y-%m-%d')`"
+date-format: "YYYY-MM-DD"
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: false
+    code-block-bg: true
+    code-overflow: scroll
+    title-block-banner: true
+    fig-align: center
+    df-print: paged
+    grid: 
+      content-mode: auto
+    smooth-scroll: true
+    page-navigation: true
+execute:
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(ggpubr)
+library(scales)
+library(patchwork)
+library(tidyverse)
+library(tidybiology)
+```
+
+## Install the Tidybiology package, which includes the data ‘chromosome’ and ‘proteins’, devtools::install_github("hirscheylab/tidybiology")
+### a. Extract summary statistics (mean, median and maximum) for the following variables from the ‘chromosome’ data: variations, protein coding genes, and miRNAs. Utilize the tidyverse functions to make this as simply as possible.
+```{r}
+data("chromosome")
+data("proteins")
+
+cat("\n=== CHROMOSOME DATA SUMMARY STATISTICS ===\n")
+# Extract summary statistics using tidyverse functions
+chromosome_summary <- chromosome %>%
+  summarise(
+    # Variations statistics
+    variations_mean = mean(variations, na.rm = TRUE),
+    variations_median = median(variations, na.rm = TRUE),
+    variations_max = max(variations, na.rm = TRUE),
+    
+    # Protein coding genes statistics
+    protein_codinggenes_mean = mean(protein_codinggenes, na.rm = TRUE),
+    protein_codinggenes_median = median(protein_codinggenes, na.rm = TRUE),
+    protein_codinggenes_max = max(protein_codinggenes, na.rm = TRUE),
+    
+    # miRNAs statistics
+    miRNAs_mean = mean(mi_rna, na.rm = TRUE),
+    miRNAs_median = median(mi_rna, na.rm = TRUE),
+    miRNAs_max = max(mi_rna, na.rm = TRUE)
+  )
+
+# Display results in a more readable format
+summary_long <- chromosome_summary %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = c("variable", "statistic"),
+    names_sep = "_(?=[^_]+$)",  # Split on the last underscore
+    values_to = "value"
+  ) %>%
+  pivot_wider(
+    names_from = statistic,
+    values_from = value
+  ) %>%
+  mutate(
+    variable = case_when(
+      variable == "variations" ~ "Variations",
+      variable == "protein_codinggenes" ~ "Protein Coding Genes",
+      variable == "miRNAs" ~ "miRNAs"
+    ),
+    across(c(mean, median, max), ~round(.x, 2))
+  )
+
+cat("Summary Statistics Table:\n")
+print(summary_long)
+```
+
+### b. How does the chromosome size distribute? Plot a graph that helps to visualize this by using ggplot2 package functions.
+```{r}
+#| fig-height: 4
+#| fig-width: 12
+cat("\n=== CHROMOSOME SIZE DISTRIBUTION ===\n")
+cat("Available columns in chromosome dataset:\n")
+print(names(chromosome))
+
+chr_size_stats <- chromosome %>%
+  summarise(
+    n = n(),
+    mean_length = mean(length_mm, na.rm = TRUE),
+    median_length = median(length_mm, na.rm = TRUE),
+    sd_length = sd(length_mm, na.rm = TRUE),
+    min_length = min(length_mm, na.rm = TRUE),
+    max_length = max(length_mm, na.rm = TRUE)
+  )
+
+cat("Chromosome size statistics (in mm):\n")
+print(chr_size_stats)
+
+p1 <- ggplot(chromosome, aes(x = length_mm)) +
+  geom_histogram(bins = 15, fill = "steelblue", alpha = 0.7, color = "black") +
+  geom_vline(aes(xintercept = mean(length_mm)), 
+             color = "red", linetype = "dashed", size = 1) +
+  geom_vline(aes(xintercept = median(length_mm)), 
+             color = "orange", linetype = "dashed", size = 1) +
+  labs(title = "Distribution of Human Chromosome Sizes",
+       x = "Chromosome Length (mm)",
+       y = "Frequency",
+       subtitle = "Red line: Mean, Orange line: Median") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5, size = 10))
+
+p2 <- ggplot(chromosome, aes(y = length_mm)) +
+  geom_boxplot(fill = "lightcoral", alpha = 0.7, width = 0.5) +
+  geom_jitter(aes(x = 0), width = 0.1, alpha = 0.6, size = 2, color = "darkred") +
+  labs(title = "Chromosome Size Distribution (Boxplot)",
+       y = "Chromosome Length (mm)") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+p3 <- chromosome %>%
+  arrange(desc(length_mm)) %>%
+  mutate(id = factor(id, levels = id)) %>%
+  ggplot(aes(x = id, y = length_mm)) +
+  geom_col(fill = "darkorchid", alpha = 0.8) +
+  labs(title = "Individual Chromosome Sizes",
+       x = "Chromosome",
+       y = "Length (mm)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+wrap_plots(p1, p2, p3, nrow = 1)
+```
+
+### c. Does the number of protein coding genes or miRNAs correlate with the length of the chromosome? Make two separate plots to visualize these relationships.
+```{r}
+#| fig-height: 5
+#| fig-width: 10
+cat("\n=== CORRELATION ANALYSIS ===\n")
+cor_protein_genes <- cor(chromosome$length_mm, chromosome$protein_codinggenes, use = "complete.obs")
+cor_mirnas <- cor(chromosome$length_mm, chromosome$mi_rna, use = "complete.obs")
+
+cat("Correlation between chromosome length and protein coding genes:", round(cor_protein_genes, 3), "\n")
+cat("Correlation between chromosome length and miRNAs:", round(cor_mirnas, 3), "\n")
+
+p4 <- ggplot(chromosome, aes(x = length_mm, y = protein_codinggenes)) +
+  geom_point(size = 3, alpha = 0.7, color = "darkgreen") +
+  geom_smooth(method = "lm", se = TRUE, color = "red", linewidth = 1.2) +
+  labs(title = "Protein Coding Genes vs Chromosome Length",
+       x = "Chromosome Length (mm)",
+       y = "Number of Protein Coding Genes",
+       subtitle = paste("Correlation coefficient:", round(cor_protein_genes, 3))) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5, size = 12))
+
+p5 <- ggplot(chromosome, aes(x = length_mm, y = mi_rna)) +
+  geom_point(size = 3, alpha = 0.7, color = "darkblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "orange", linewidth = 1.2) +
+  labs(title = "miRNAs vs Chromosome Length",
+       x = "Chromosome Length (mm)",
+       y = "Number of miRNAs",
+       subtitle = paste("Correlation coefficient:", round(cor_mirnas, 3))) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5, size = 12))
+
+wrap_plots(p4, p5, nrow = 1)
+```
+
+### d. Calculate the same summary statistics for the ‘proteins’ data variables length and mass. Create a meaningful visualization of the relationship between these two variables by utilizing the ggplot2 package functions.
+```{r}
+#| fig-height: 5
+#| fig-width: 11
+cat("\n=== PROTEINS DATA ANALYSIS ===\n")
+proteins_summary <- proteins %>%
+  summarise(
+    across(c(length, mass), 
+           list(mean = ~mean(.x, na.rm = TRUE),
+                median = ~median(.x, na.rm = TRUE),
+                max = ~max(.x, na.rm = TRUE)),
+           .names = "{.col}_{.fn}")
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = c("variable", "statistic"),
+    names_sep = "_",
+    values_to = "value"
+  ) %>%
+  pivot_wider(
+    names_from = statistic,
+    values_from = value
+  ) %>%
+  mutate(
+    variable = case_when(
+      variable == "length" ~ "Protein Length",
+      variable == "mass" ~ "Protein Mass"
+    ),
+    across(c(mean, median, max), ~round(.x, 2))
+  )
+
+cat("Protein Summary Statistics:\n")
+print(proteins_summary)
+
+cor_length_mass <- cor(proteins$length, proteins$mass, use = "complete.obs")
+cat("\nCorrelation between protein length and mass:", round(cor_length_mass, 3), "\n")
+
+p6 <- proteins %>%
+  filter(!is.na(length), !is.na(mass)) %>%
+  filter(length < quantile(length, 0.99, na.rm = TRUE),
+         mass < quantile(mass, 0.99, na.rm = TRUE)) %>%
+  ggplot(aes(x = length, y = mass)) +
+  geom_hex(alpha = 0.8, bins = 30) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", linewidth = 1.5) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue", name = "Count") +
+  labs(title = "Relationship Between Protein Length and Mass",
+       x = "Protein Length (amino acids)",
+       y = "Protein Mass (Da)",
+       subtitle = paste("Correlation coefficient:", round(cor_length_mass, 3))) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color = "darkblue"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, color = "gray40"),
+    axis.title = element_text(size = 12, face = "bold"),
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "gray98", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  ) +
+  scale_x_continuous(labels = comma_format()) +
+  scale_y_continuous(labels = comma_format())
+
+p7 <- proteins %>%
+  filter(!is.na(length), !is.na(mass)) %>%
+  filter(length < quantile(length, 0.95, na.rm = TRUE),
+         mass < quantile(mass, 0.95, na.rm = TRUE)) %>%
+  ggplot(aes(x = length, y = mass)) +
+  geom_point(alpha = 0.3, size = 0.8, color = "steelblue") +
+  geom_density_2d_filled(alpha = 0.6, contour_var = "ndensity") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", linewidth = 2) +
+  scale_fill_viridis_d(name = "Density", option = "plasma") +
+  labs(title = "Protein Length vs Mass Relationship",
+       x = "Protein Length (amino acids)",
+       y = "Protein Mass (Da)",
+       subtitle = "Density contours show data distribution patterns") +
+  theme_dark() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", color = "white"),
+    plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray80"),
+    axis.title = element_text(size = 12, face = "bold", color = "white"),
+    axis.text = element_text(color = "white"),
+    legend.title = element_text(color = "white"),
+    legend.text = element_text(color = "white"),
+    panel.grid.major = element_line(color = "gray30", size = 0.3),
+    panel.grid.minor = element_blank(),
+    legend.background = element_rect(fill = "gray10", color = NA),
+    plot.background = element_rect(fill = "gray10", color = NA)
+  ) +
+  scale_x_continuous(labels = comma_format()) +
+  scale_y_continuous(labels = comma_format())
+
+wrap_plots(p6, p7, nrow = 1)
+```
+
+## Date & Session
+```{r}
+#| collapse: true
+#| results: hold
+date()
+sessionInfo()
+```
