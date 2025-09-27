@@ -6,6 +6,7 @@ date-format: "YYYY-MM-DD"
 format:
   html:
     toc: true
+    embed-resources: true
     number-sections: true
     code-fold: false
     code-block-bg: true
