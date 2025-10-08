@@ -1,0 +1,305 @@
+---
+title: "RIKEN-KI course final"
+author: "Hening, Villablanca Group"
+date: "`r format(Sys.time(),'%Y-%m-%d')`"
+date-format: "YYYY-MM-DD"
+format:
+  html:
+    toc: true
+    embed-resources: true
+    number-sections: true
+    code-fold: true
+    code-block-bg: true
+    code-overflow: scroll
+    title-block-banner: true
+    fig-align: center
+    df-print: paged
+    grid: 
+      content-mode: auto
+    smooth-scroll: true
+    page-navigation: true
+execute:
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+## Loading Library
+```{r}
+suppressWarnings(
+suppressMessages({
+  library(tidyverse)
+  library(ggpubr)
+  library(cluster)
+  library(zeallot)
+  library(ComplexHeatmap)
+}))
+```
+
+```{r}
+#| include: false
+knitr::opts_knit$set(root.dir="/Users/ninghe/Desktop/course/riken-ki/Practical")
+setwd("/Users/ninghe/Desktop/course/riken-ki/Practical")
+source("./scripts/color_fill_scales.R")
+c1 <- c("darkblue", "cyan", "yellow", "red", "darkred")
+c2 <- c("grey", "cyan", "red")
+c3 <- c("#FCFDBFFF", "#FED395FF", "#FEA873FF", "#F97C5DFF", "#E95562FF", 
+        "#C83E73FF", "#A3307EFF", "#7D2482FF", "#5A167EFF", "#331068FF")
+c4 <- viridis::viridis(n = 100)
+cols <- c("firebrick", "springgreen4", "blue3", "turquoise", "darkorchid2", 
+          "gold2","antiquewhite4", "bisque2", "cadetblue1", "chocolate", 
+          "cornflowerblue","cornsilk", "cyan4", "cyan", "darkblue", 
+          "darkgoldenrod", "darkgreen", "violet", "darkolivegreen1", 
+          "darkgoldenrod1", "darkolivegreen", "darkorange", "tan",
+          "darkorchid4", "darkslateblue", "darkslategray", "darkslategray3", 
+          "violetred1", "firebrick1", "goldenrod4", "forestgreen", "dodgerblue4", 
+          "greenyellow", "honeydew1", "hotpink3", "khaki", "lavender", "lightcoral", 
+          "midnightblue", "lavenderblush4", "magenta", "mediumaquamarine", 
+          "magenta4", "orange", "pink", "maroon", "palegreen", "peachpuff", 
+          "orangered", "peru", "plum", "royalblue", "seashell", "slategray", 
+          "slateblue", "skyblue", "saddlebrown", "yellow", "yellowgreen", "violet", 
+          "turquoise1", "thistle1", "royalblue4", "red4", "plum4", 
+          "mediumaquamarine", "olivedrab1", "navajowhite4", "mistyrose4")
+blank <- theme(plot.background = element_rect(fill = "black"), 
+               panel.background = element_rect(fill = "black"),
+               plot.title = element_text(colour = "white"), 
+               plot.subtitle = element_text(colour = "white"),
+               strip.text = element_text(colour = "white"), 
+               legend.title = element_text(colour = "white"),
+               legend.text = element_text(colour = "white"),
+               axis.line = element_blank(),
+               axis.text = element_blank(),
+               axis.ticks = element_blank(),
+               axis.title = element_blank())
+
+get_top_loadings <- function(rot, pc = 1, top = 15) {
+  df <- data.frame(feature = rownames(rot), 
+                   loading = rot[, pc]) %>%
+    arrange(loading) %>%
+    slice_head(n = top)
+  df$feature <- gsub("_mean$", "", df$feature)
+  df$feature <- factor(df$feature, unique(df$feature))
+  return(df)
+}
+```
+
+## Loading Data
+```{r}
+mtx <- read_tsv("./Data/TS2_QPCR.tsv")
+meta <- read_tsv("./Data/Metadata_all.tsv")
+mor <- read_tsv("./Data/TS3_Morphologies_Measurements.tsv")
+
+rep1_cols <- grep("_rep1$", names(mor), value = TRUE)
+base_names <- sub("_rep1$", "", rep1_cols)
+for (base in base_names) {
+  mean_col <- paste0(base, "_mean")
+  mor[[mean_col]] <- rowMeans(mor[, c(paste0(base, "_rep1"), 
+                                     paste0(base, "_rep2"))], 
+                              na.rm = TRUE)
+}
+mor <- dplyr::select(mor, -ends_with("_rep1"), -ends_with("_rep2"))
+mor_noctrl <- mor %>% filter(KD.pubID %in% mtx$KD.pubID)
+mor_ctrl <- mor %>% filter(!(KD.pubID %in% mtx$KD.pubID))
+mor_ctrl <- mor_ctrl %>% filter(KD.pubID %in% "NC_A")
+
+all.equal(mor_noctrl$KD.pubID, mtx$KD.pubID)
+mor_success <- mor_noctrl[c(mtx$Inc_flag == 1),]
+
+mor <- rbind(mor_ctrl, mor_success)
+#keep <- mor %>% 
+#  count(KD.pubID) %>% 
+#  mutate(keep = n >= 3) %>% 
+#  filter(keep) %>% 
+#  pull(KD.pubID)
+#mor <- mor %>% filter(KD.pubID %in% keep)
+#mor$KD.pubID <- factor(mor$KD.pubID, unique(mor$KD.pubID))
+
+mor$KD.pubID <- factor(mor$KD.pubID, unique(mor$KD.pubID))
+mor_sum <- mor %>%
+  mutate(row_order = row_number()) %>%
+  group_by(KD.pubID, KD.geneSymbol, Description#, transfection_plate
+           ) %>%
+  summarise(across(ends_with("_mean"), mean, na.rm = TRUE), 
+            row_order = min(row_order),
+            .groups = "drop") %>%
+  arrange(row_order) %>%
+  dplyr::select(-row_order)
+```
+
+## Preprocessing
+```{r}
+data <- mor_sum[, -(2:3)] %>% column_to_rownames("KD.pubID")
+target <- filter(meta, transcriptType == "Targeted lncRNA") %>% pull(geneSymbol)
+data <- data %>% filter(rownames(data) %in% target)
+data <- data %>% mutate(across(where(is.numeric), scale))
+colnames(data) <- gsub("_mean$", "", colnames(data))
+colnames(data) <- factor(colnames(data), unique(colnames(data)))
+
+head(data, 10)
+```
+
+## PCA
+```{r}
+#| fig-height: 5
+#| fig-width: 12
+data.pca  <- prcomp(data, center = TRUE)
+
+pc.cols <- ArchR::paletteDiscrete(colnames(data.pca$x),"grove")
+p1 <- enframe(data.pca$sdev^2/sum(data.pca$sdev^2)) %->% pc.sdev %>%
+  mutate(pc = paste0("PC", row_number()),
+         comp = colnames(data.pca$x)) %>% dplyr::slice(1:5) %>%
+  ggbarplot(x = "comp", y = "value", fill = "comp", palette = pc.cols,
+            xlab = "Principal Components", ylab = "Variance Explained",
+            title = "PC Morphologies") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  geom_hline(yintercept = 0.2, linetype = 2) + theme_test() + 
+  theme(axis.ticks = element_blank()) + Seurat::NoLegend()
+
+top_pc1 <- get_top_loadings(data.pca$rotation, pc = 1)
+top_pc2 <- get_top_loadings(data.pca$rotation, pc = 2)
+
+p2 <- ggplot(top_pc1) +
+  geom_col(aes(x = loading, y = feature,  fill = loading > 0)) + 
+  scale_fill_manual(values = c("TRUE" = "lightcoral", 
+                               "FALSE" = "steelblue")) +
+  theme_pubr() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.ticks = element_blank(),
+        legend.position = "none") +
+  labs(title = "PC 1 Contribution", x = "", y = "") |
+ggplot(top_pc2) +
+  geom_col(aes(x = loading, y = feature,  fill = loading > 0)) + 
+  scale_fill_manual(values = c("TRUE" = "lightcoral", 
+                               "FALSE" = "steelblue")) +
+  theme_pubr() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.ticks = element_blank(),
+        legend.position = "none") +
+  labs(title = "PC 2 Contribution", x = "", y = "") +
+  scale_y_discrete(position = "right")
+
+p1 | p2
+#ggsave("./Figures/PCA_variance_contribution.pdf", height = 5, width = 12)
+```
+
+## Cluster
+```{r}
+#| fig-height: 6
+#| fig-width: 13.5
+target <- filter(meta, transcriptType == "Targeted lncRNA") %>% 
+  dplyr::select(KD.pubID = geneSymbol, fibroblast_specificity, 
+                localization, DHS_type)
+target <- filter(target, KD.pubID %in% intersect(KD.pubID, rownames(data.pca$x)))
+
+tmp <- data.frame(data.pca$x[,1:2]) %>% 
+  rownames_to_column("KD.pubID") %>%
+  left_join(target, by = "KD.pubID") %>%
+  mutate(target = ifelse(KD.pubID %in% target$KD.pubID, "Targeted", "Non") %>%
+           factor(levels = c("Targeted", "Non")))
+
+cols <- ArchR::paletteDiscrete(unique(tmp$localization), set = "stallion")
+cols <- scales::alpha(cols, 0.8)
+id <- tmp %>% filter(PC1 < -5) %>% pull(KD.pubID)
+
+p3 <- ggplot(tmp) +
+  geom_point(aes(x = PC1, y = PC2, color = localization, shape = DHS_type#,
+                 #size = fibroblast_specificity
+                 ), stroke = 0, size = 5) + 
+  theme_test() +
+  geom_vline(xintercept = -5, linetype = 2) + 
+  scale_color_manual(values = cols, name = "Localization") +
+  #scale_size_continuous(range = c(3, 10), name = "FB Specificity") +
+  ggrepel::geom_text_repel(data = filter(tmp, KD.pubID %in% id), 
+                           aes(x = PC1, y = PC2, label = KD.pubID),
+                           color = "black", size = 5, bg.color = "white", 
+                           max.overlaps = 100, show.legend = FALSE) +
+  labs(title = "PCA Morphologies",
+       x = paste0("PC_1 ", round(pc.sdev[,2][1,],2)),
+       y = paste0("PC_2 ", round(pc.sdev[,2][2,],2))) +
+  theme(panel.grid = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  guides(shape = guide_legend(override.aes = list(size = 5, alpha = 1), ncol = 1),
+         color = guide_legend(override.aes = list(size = 5, alpha = 1), ncol = 1)) +
+  xlim(c(-25, 10)) + ylim(c(-7, 8)) +
+  labs(x = "PC 1", y = "PC 2")
+
+d  <- dist(as.matrix(data), method = "euclidean")
+hc <- hclust(d, method = "ward.D2")
+
+ks <- 2:5
+sil_scores <- sapply(ks, function(k){
+  cl <- cutree(hc, k)
+  mean(silhouette(cl, d)[, "sil_width"])
+})
+k_best <- ks[which.max(sil_scores)]
+
+cl <- cutree(hc, k_best)
+all.equal(names(cl), tmp$KD.pubID)
+tmp$cluster <- as.factor(cl)
+
+p4 <- ggscatter(tmp, ellipse = TRUE, ellipse.type = "norm",
+          ellipse.level = 0.95, ellipse.alpha = 0.2,
+          palette = c("#FD6467","#0B775E"), size = 3,
+          x = "PC1", y = "PC2", color = "cluster",
+          title = "PCA Morphologies") + 
+  ggrepel::geom_text_repel(
+    data = dplyr::filter(tmp, KD.pubID %in% id),
+    mapping = aes(PC1, PC2, label = KD.pubID),
+    inherit.aes = FALSE,  
+    color = "black", size = 5,
+    bg.color = "white", bg.r = .1,
+    max.overlaps = 100, show.legend = FALSE) +
+  theme_test() + theme(panel.grid = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  xlim(c(-25, 10)) + ylim(c(-7, 8)) +
+  labs(x = "PC 1", y = "PC 2")
+
+p3 | p4
+#ggsave("./Figures/PCA_morphologies.pdf", height = 6, width = 13.5)
+```
+
+## Heatmap
+```{r}
+#| fig-height: 3.2
+#| fig-width: 20
+ha_top <- HeatmapAnnotation(
+  Cluster = cl[rownames(data)],
+  col = list(Cluster = setNames(c("#FD6467","#0B775E"), c(1,2))),
+  simple_anno_size = unit(3, "mm"),
+  annotation_name_gp = gpar(fontsize = 9, fontface = "bold")
+)
+
+#data <- data %>%
+#  mutate(across(where(is.numeric), ~ {
+#    #x <- scale(.)[, 1]                          
+#    x <- .x + abs(min(.x, na.rm = TRUE))          
+#    x
+#  }))
+
+p <- Heatmap(as.matrix(data) %>% t, 
+        col = circlize::colorRamp2(c(-2, 0, 2), c("steelblue", "white", "lightcoral")),
+        rect_gp = grid::gpar(col = "black", lwd = 0.1),
+        cluster_rows = TRUE, cluster_columns = TRUE,
+        show_row_dend = FALSE, show_column_dend = FALSE,
+        row_names_side = "left", row_names_gp = gpar(fontsize = 6),
+        column_names_gp = gpar(fontsize = 8),
+        top_annotation = ha_top,
+        heatmap_legend_param = list(title = "Z-score", 
+                                    title_gp = gpar(fontsize = 10, fontface = "bold"),
+                                    labels_gp = gpar(fontsize = 8)))
+#pdf("./Figures/Heatmap_morphologies.pdf", height = 3, width = 20)
+#draw(p)
+#dev.off()
+
+p
+```
+
+## Date & Session
+```{r}
+#| collapse: true
+#| results: hold
+date()
+sessionInfo()
+```
